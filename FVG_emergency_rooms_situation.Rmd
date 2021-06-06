@@ -1,0 +1,808 @@
+---
+title: 'Friuli-Venezia Giulia Emergency Rooms situation during Spring 2021'
+author: 'Enrico Stefanel^[Università degli Studi di Udine, stefanel.enrico@spes.uniud.it]'
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+editor_options:
+  chunk_output_type: inline
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, eval=TRUE, fig.align='center')
+```
+
+## Introduction
+
+Friuli-Venezia Giulia region offers a [web service](https://servizionline.sanita.fvg.it/psonline) for checking average waiting times in local Emergency Rooms and their live occupancy in terms of number of patients, divided by priority code.
+
+The system is powered by [Insiel](https://www.insiel.it), and includes a JSON file updated every 10 minutes with all the information displayed in the web-page.
+
+I ran a Python script on my Raspberry Pi 4 every 10 minutes to collect this information and insert them into two CSV files: one for Emergency Rooms information, and the other one for Emergency Rooms loads.
+I also wrote a CSV file with National decision about local COVID risk valuation, every time this changed.
+
+Data collection began on 2021-03-23 at 00:00:20.
+
+***
+
+## Challenges
+
+Some questions that we can ask about Emergency Room system in Friuli-Venezia Giulia are:
+
+1. Which is the most used hospital?
+2. Is there any area in Friuli-Venezia Giulia that is poorly covered by Emergency system?
+3. How is color priority related with waiting time?
+4. How does Emergency Rooms entrance change during week days?
+5. Given some location coordinates and a priority, which is the nearest hospital?
+
+In this project we' we'll try to answer all of this questions, through data analysis and data visualization.
+
+***
+
+## Dataset analysis
+
+The dataset is formed by three different tables:
+
+- **emergencyRooms**, that lists all Emergency Rooms in Friuli-Venezia Giulia, with relative address, healthcare company, notes, ...;
+- **attendances**, with records of Emergency Rooms loads every ten minutes, divided by priority colors;
+- **COVIDLocalRiskValuation**, with local valuation of COVID situation, decided by the National Institute of Health (ISS).
+
+***
+
+## Data import
+
+We start loading required libraries for the analysis, and importing fonts from our computer (we're going to change font family in plots).
+
+```{r libraries}
+library(readr)    # Allows reading CSV files
+library(tidyr)
+library(dplyr)
+library(ggrepel)
+library(ggplot2)  # Allows to create beautiful plots
+library(gganimate)# Allows to animate plots
+library(anytime)  # Allows UNIX_timestamp-ISO8601 transformation
+library(lubridate)# Allows reading single components from POSIXct data
+library(hms)      # Allows reading single components from hms data
+library(leaflet)  # Allows creating maps
+library(gifski)   # Allows rendering animations
+library(scales)
+
+library(extrafont)# Allows changing plots font
+#font_import()    # Import computer fonts in RStudio (Just the first time)
+loadfonts(device='postscript', quiet=TRUE)
+```
+
+Next, we download our dataset from our repository, and create three tables *emergencyRooms*, *attendances* and *COVIDLocalRiskValuation*.
+We also set the desired order for week days (in this case, starting on Mondays, following *ISO-8601* order) and plot colors for priority code and Healthcare Companies.
+
+```{r import}
+# Import dataset
+emergencyRooms <- read_csv('https://www.enricostefanel.it/files/FVG_healthcare/emergencyRooms.csv', na='')
+attendances <- read_csv('https://www.enricostefanel.it/files/FVG_healthcare/attendances.csv', na='')
+COVIDLocalRiskValuation <- read_csv('https://www.enricostefanel.it/files/FVG_healthcare/COVIDLocalRiskValuation.csv', na='')
+
+# Set weekdays order in European format, and set data colors for graphs
+weekdays_order <- c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
+priority_colors <- c(Bianco='#C8C9C6', Verde='#568259', Giallo='#FDC149', Rosso='#D03111')
+healtcare_company_colors <- c('AS - Friuli Occidentale'='#F3B353', 'ASU - Friuli Centrale'='#F48366', 'ASU - Giuliano Isontina'='#91C7CA')
+```
+
+Let's take a look at our main tables:
+
+```{r}
+head(emergencyRooms, 3)
+head(attendances, 10)
+```
+
+***
+
+## Data cleaning
+
+First of all, we notice that the date in column *timestamp* is specified in *Unix timestamp* format (in milliseconds).
+For convenience and user understandability, we transform this data in *ISO 8601* format, and set timezone of observations into *Europe/Rome*.
+
+We also arrange rows of observation with same *date_time* and from the same *emergency_room* so that priority order matches its semantic order ('Bianco', 'Verde', 'Giallo', 'Rosso').
+
+```{r}
+# Change attendances UNIX timestamp column to ISO 8601 date_time format
+attendances <- attendances %>%
+  rename(date_time=timestamp) %>% 
+  mutate(date_time=anytime(date_time/1000)) %>%
+  select(date_time, emergency_room, priority, examined_patients, waiting_patients, waiting_time)
+
+# Change COVIDLocalRiskValuation UNIX timestamp column to ISO 8601 date_time format
+COVIDLocalRiskValuation <- COVIDLocalRiskValuation %>%
+  rename(date_time=timestamp) %>% 
+  mutate(date_time=anytime(date_time/1000)) %>%
+  select(date_time, risk)
+
+# Set timezone
+attr(COVIDLocalRiskValuation$date_time, 'tzone') <- "Europe/Rome"
+attr(attendances$date_time, 'tzone') <- "Europe/Rome"
+
+# Reorder priority in order (Bianco, Verde, Giallo, Rosso)
+attendances <- attendances %>% 
+  group_by( date_time, emergency_room ) %>% 
+  arrange( date_time, emergency_room, match(priority, c('Bianco', 'Verde', 'Giallo', 'Rosso')) )
+attendances$priority <- factor(attendances$priority, levels=c('Bianco', 'Verde', 'Giallo', 'Rosso'))
+
+```
+
+***
+
+Taking a look at the *EmergencyRooms* dataset, we read that some Emergency Room are closed during night hours or period of the year:
+
+- 'Punto di Primo Intervento Lignano' is only open between May to September;
+- 'Punto di Primo Intervento Sacile' is open everyday from 08:00 to 20:00;
+- 'Pronto Soccorso Maggiore' is open everyday from 08:00 to 19:30.
+
+In the data, observation during closing hours are stored as valid fields with zero values.
+This could lead to misunderstandings: it's better to transform this observations to *NA*.
+
+```{r}
+# Set all observation to NA when an Emergency Room is in close days or hours
+attendances <- attendances %>%
+  mutate(
+    examined_patients=ifelse(emergency_room == 'Punto di Primo Intervento Lignano' & ( month(date_time)<5 | month(date_time)>9 ), NA, examined_patients),
+    waiting_patients=ifelse(emergency_room == 'Punto di Primo Intervento Lignano' & ( month(date_time)<5 | month(date_time)>9 ), NA, waiting_patients),
+    waiting_time=ifelse(emergency_room == 'Punto di Primo Intervento Lignano' & ( month(date_time)<5 | month(date_time)>9 ), NA, waiting_time),
+  ) %>%
+  mutate(
+    examined_patients=ifelse(emergency_room == 'Punto di Primo Intervento Sacile' & (hour(date_time)<8 | hour(date_time)>20), NA, examined_patients),
+    waiting_patients=ifelse(emergency_room == 'Punto di Primo Intervento Sacile' & (hour(date_time)<8 | hour(date_time)>20), NA, waiting_patients),
+    waiting_time=ifelse(emergency_room == 'Punto di Primo Intervento Sacile' & (hour(date_time)<8 | hour(date_time)>20), NA, waiting_time),
+  ) %>% 
+  mutate(
+    examined_patients=ifelse(emergency_room == 'Pronto Soccorso Maggiore' & (hour(date_time)<8 | hour(date_time)>19 | (hour(date_time)==19 & minute(date_time)>=30 ) ), NA, examined_patients),
+    waiting_patients=ifelse(emergency_room == 'Pronto Soccorso Maggiore' & (hour(date_time)<8 | hour(date_time)>19 | (hour(date_time)==19 & minute(date_time)>=30 ) ), NA, waiting_patients),
+    waiting_time=ifelse(emergency_room == 'Pronto Soccorso Maggiore' & (hour(date_time)<8 | hour(date_time)>19 | (hour(date_time)==19 & minute(date_time)>=30 ) ), NA, waiting_time)
+  )
+```
+
+***
+
+Lastly, we decide to don't treat pediatric hospitals in this studio.
+We treat pediatric Emergency Rooms as part of the main Emergency Room in the same hospital, if exists.
+To do this, we sum values for *examined_patients* and *waiting_patients* in both Emergency Rooms, and keep the weighted time estimated for *waiting_time* pounded with number of patients in each Emergency Room.
+If there is any pediatric Emergency Room that doesn't have a main Emergency Room in the same Hospital, we simply drop its data.
+
+```{r}
+# 'Pronto Soccorso Pediatrico Pordenone' and 'Pronto Soccorso Pediatrico Udine' are
+# pediatric Emergency Rooms of an hospital with other Emergency Room, 'Pronto Soccorso Burlo' isn't.
+
+attendances <- attendances %>%
+  mutate(emergency_room=gsub(' Pediatrico', '', emergency_room)) %>%
+  group_by(date_time, emergency_room, priority) %>% 
+  summarise(
+    waiting_time=round_hms(as_hms( ifelse( sum(waiting_time)+sum(examined_patients) == 0, 0, weighted.mean(waiting_time, (examined_patients+waiting_patients), na.rm=TRUE))), 60),
+    examined_patients=sum(examined_patients),
+    waiting_patients=sum(waiting_patients),
+    .groups='drop'
+  ) %>%
+  filter( emergency_room != 'Pronto Soccorso Burlo' ) %>% 
+  select(date_time, emergency_room, priority, examined_patients, waiting_patients, waiting_time)
+```
+
+***
+
+We also add a column *total_patients* in each row, that is the sum of values in *examined_patients* and *waiting_patients*.
+
+```{r}
+# Add total_patients column
+attendances <- attendances %>%
+  mutate(total_patients=examined_patients + waiting_patients ) %>% 
+  select(date_time, emergency_room, priority, total_patients, examined_patients, waiting_patients, waiting_time)
+```
+
+***
+
+It will be helpful to have a table with median loads for every Emergency Room.
+
+```{r}
+# Table with median loads for every non-pediatric Emergency Room.
+median_loads <- right_join(
+  attendances %>%
+    select(date_time, emergency_room, priority, total_patients) %>%
+    pivot_wider(names_from=priority, values_from=total_patients) %>%
+    mutate(total_patients_overall=Giallo + Verde + Bianco + Rosso) %>%
+    group_by(emergency_room) %>%
+    summarise_each(funs(median(., na.rm=TRUE)), Bianco=Bianco, Verde=Verde, Giallo=Giallo, Rosso=Rosso, median_load=total_patients_overall) %>% 
+    arrange( -median_load),
+  emergencyRooms %>%
+    filter( is_pediatric==FALSE ) %>% 
+    select(emergency_room)
+)
+```
+
+***
+
+## Data visualization
+
+Where are Emergency Rooms located in Friuli-Venezia Giulia map?
+We can visualize that using a *leaflet* map.
+Every circle correspond to an Emergency Room. The color matches the Healthcare company which the Hospital belongs, and the size of the circle is proportional to the median of patients in the Emergency Room.
+Circles of Emergency Rooms with *NA* values for median load are semi-transparent filled.
+
+```{r}
+map <- emergencyRooms %>%
+  right_join(median_loads, by='emergency_room') %>%
+  leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addCircleMarkers(
+    lng=~longitude,
+    lat=~latitude,
+    popup= paste(
+     'Healthcare company: <b>', right_join(emergencyRooms, median_loads)$healthcare_company, '</b><br>',
+     'Hospital: <b>', right_join(emergencyRooms, median_loads)$hospital, '</b><br>',
+     'Emergency Room: <b>', right_join(emergencyRooms, median_loads)$emergency_room, '</b><br>',
+     ifelse(!is.na(right_join(emergencyRooms, median_loads)$median_load), paste('Median load: <b>', right_join(emergencyRooms, median_loads)$median_load, '</b><br>'), '' ),
+     ifelse(!is.na(right_join(emergencyRooms, median_loads)$notes), paste('Notes: ', right_join(emergencyRooms, median_loads)$notes), '' )
+    ),
+    radius=~ifelse(!is.na(median_load), (sqrt(median_load+1))*7.5, 7.5),
+    fillColor=~ifelse(!is.na(healthcare_company), (colorFactor( healtcare_company_colors, domain=healthcare_company )(healthcare_company)), 'black'),
+    color=~ifelse(!is.na(healthcare_company), (colorFactor( healtcare_company_colors, domain=healthcare_company )(healthcare_company)), 'black'),
+    weight=2.5,
+    opacity=1,
+    fillOpacity=~ifelse(!is.na(median_load), 0.75, 0.15)
+  )
+```
+```{r echo=FALSE}
+htmlwidgets::saveWidget(map, 'images/map.html', selfcontained=TRUE )
+
+map
+```
+
+We notice that in the northern area of Friuli-Venezia Giulia, there is only one Emergency Room!
+It is clear why, if we analyze the morphology of the territory: northern area of the Region consists exclusively of mountains, so population density is very low, and more Emergency Rooms are not necessary.
+This answers to our second question (Are there any area in Friuli-Venezia Giulia that are poorly covered by Emergency system?).
+
+***
+
+Now, we know the context.
+From the map above, we can identify which are the Emergency Rooms with most patients, on average. Let's visualize it with a boxplot: 
+
+```{r}
+attendances %>%
+  select(date_time, emergency_room, priority, total_patients) %>%
+  pivot_wider(names_from=priority, values_from=total_patients) %>%
+  mutate(total_patients_overall=Giallo + Verde + Bianco + Rosso) %>%
+  select(-Giallo, -Verde, -Bianco, -Rosso) %>%
+  group_by(emergency_room) %>% 
+  filter( median(total_patients_overall, na.rm=TRUE) >= 10) %>%
+  left_join(
+    select(emergencyRooms, c(emergency_room, healthcare_company)),
+    by='emergency_room'
+    ) %>% 
+  mutate(emergency_room=gsub('Pronto Soccorso ', '', emergency_room)) %>%
+  ggplot(mapping=aes(y=reorder(emergency_room, total_patients_overall, FUNS=median, na.rm=TRUE), 
+                             x=total_patients_overall,
+                             fill=healthcare_company)) +
+  geom_boxplot() +
+  scale_fill_manual( values=healtcare_company_colors ) +
+  labs(
+    title='Numbers of patients per Emergency Room',
+    subtitle='Distribution of total number of patients per Emergency Room',
+    caption=paste('Data from servizionline.sanita.fvg.it/psonline\nLast update:', max(attendances$date_time, na.rm=TRUE)),
+    x='Number of patients',
+    y='Emergency Room',
+    fill='Healtcare company'
+  ) +
+  theme_classic() +
+  theme(
+    legend.position='top',
+    legend.box.margin=margin( t=4, b=4, unit='mm' ),
+    legend.title=element_text( face='bold' ),
+    legend.background=element_rect( color='gray96', fill='gray96', size=2 ),
+    text=element_text( family='CMU Sans Serif' ),
+    axis.title=element_text( face='bold' ),
+    plot.title=element_text( face='bold' ),
+    plot.caption=element_text( face='italic', color='gray60' )
+    )
+```
+```{r echo=FALSE}
+ggsave('images/01_loads_boxplot.jpg', device='jpeg', width=250, height=150, units='mm', dpi=640)
+```
+
+Emergency Rooms colors are based on the Healthcare company that owns it.
+We clearly see that each Healthcare company has at least one of the major Emergency Room in Friuli-Venezia Giulia, and *AS - Friuli Centrale* owns most of the biggest Emergency Rooms.
+
+From this plot, we can answer to our first question (Which is the most used hospital?): it's *Pronto Soccorso Udine*, that has the highest median, and also highest variance. Also *Pronto Soccorso Cattinara* is a very frequented Emergency Room.
+
+***
+
+We can also view how loads changed during time, since 2021-03-23 to now.
+We can see loads of the main Emergency Rooms in one single plot, or split each Emergency Room in a distinct plot, so that it's easier to analyze single trends.
+
+```{r}
+attendances %>%
+  select(date_time, emergency_room, priority, total_patients) %>%
+  pivot_wider(names_from=priority, values_from=total_patients) %>%
+  mutate(total_patients_overall=Giallo + Verde + Bianco + Rosso) %>%
+  select(-Giallo, -Verde, -Bianco, -Rosso) %>%
+  group_by(emergency_room) %>%
+  filter( median(total_patients_overall) >= 15 ) %>%
+  mutate(emergency_room=gsub('Pronto Soccorso |Punto di Primo Intervento ', '', emergency_room)) %>% 
+  ggplot(mapping=aes(x=date_time, y=total_patients_overall, group=emergency_room, color=reorder(emergency_room, -total_patients_overall, FUNS=mean) ) ) +
+  geom_line(size=0.5, alpha=0.25) +
+  geom_vline(xintercept=COVIDLocalRiskValuation$date_time, linetype=3, size=0.25, color='black') +
+  annotate(x=COVIDLocalRiskValuation$date_time, y=+Inf, label=paste('COVID-19 local risk:\n', sprintf('\u201C'), COVIDLocalRiskValuation$risk, sprintf('\u201D'), sep=''), vjust=1.25, size=3.5, geom='label', family='CMU Sans Serif') +
+  stat_smooth(aes(color=emergency_room),  method='gam', formula=y~s(x,bs='cs'), size=1, se=FALSE) +
+  scale_x_datetime( limits=c(min(attendances$date_time), max(attendances$date_time)), labels = date_format("%Y-%m-%d") ) +
+  labs(
+    title='Patients per Emergency Room',
+    subtitle='Number of total patients along time per Emergency Room',
+    caption=paste('Data from servizionline.sanita.fvg.it/psonline\nLast update:', max(attendances$date_time, na.rm=TRUE)),
+    x='Time',
+    y='Number of patients',
+    color='Emergency Room'
+  ) +
+  theme_classic() +
+  theme(
+    legend.position='top',
+    legend.box.margin=margin( t=2, b=2, unit='mm' ),
+    legend.title=element_text( face='bold' ),
+    legend.background=element_rect( color='gray96', fill='gray96', size=2 ),
+    text=element_text( family='CMU Sans Serif' ),
+    axis.title=element_text( face='bold' ),
+    plot.title=element_text( face='bold' ),
+    plot.caption=element_text( face='italic', color='gray60' ),
+    panel.grid.major.y=element_line(color='gray95' )
+    )
+```
+```{r echo=FALSE}
+ggsave('images/02_loads_trendlines.jpg', device='jpeg', width=250, height=150, units='mm', dpi=640)
+```
+
+Let's try to split trend lines per Emergency Room.
+
+```{r}
+attendances %>%
+  select(date_time, emergency_room, priority, total_patients) %>%
+  pivot_wider(names_from=priority, values_from=total_patients) %>%
+  mutate(total_patients_overall=Giallo + Verde + Bianco + Rosso) %>%
+  select(-Giallo, -Verde, -Bianco, -Rosso) %>%
+  group_by(date_time=as.Date(strftime(date_time, "%Y-%m-%d")), emergency_room) %>%
+  summarise( total_patients_overall=median(total_patients_overall, na.rm=TRUE) ) %>%
+  group_by(emergency_room) %>% 
+  filter( median(total_patients_overall) >= 15 ) %>%
+  left_join(
+    select(emergencyRooms, c(emergency_room, healthcare_company))
+    ) %>% 
+  mutate(emergency_room=gsub('Pronto Soccorso |Punto di Primo Intervento ', '', emergency_room)) %>% 
+  ggplot(mapping=aes(x=date_time, y=total_patients_overall, group=reorder(emergency_room, -total_patients_overall, FUNS=mean), color=healthcare_company ) ) +
+  geom_line( size=0.5 ) +
+  facet_grid( cols=vars(reorder(emergency_room, -total_patients_overall, FUNS=median)) ) +
+  scale_colour_manual(values=healtcare_company_colors) +
+  scale_x_date( labels = date_format("%Y-%m-%d") ) +
+  labs(
+    title='Patients per Emergency Room',
+    subtitle='Number of total patients along time per Emergency Room',
+    caption=paste('Data from servizionline.sanita.fvg.it/psonline\nLast update:', max(attendances$date_time, na.rm=TRUE)),
+    x='Time',
+    y='Number of patients',
+    color='Healthcare Company'
+  ) +
+  theme_classic() +
+  theme(
+    legend.position='top',
+    legend.box.margin=margin( t=4, b=4, unit='mm' ),
+    legend.title=element_text( face='bold' ),
+    legend.background=element_rect( color='gray96', fill='gray96', size=2 ),
+    text=element_text( family='CMU Sans Serif' ),
+    axis.title=element_text( face='bold' ),
+    axis.text.x=element_text(angle=30, hjust=1),
+    plot.title=element_text( face='bold' ),
+    plot.caption=element_text( face='italic', color='gray60' ),
+    panel.grid.major.y=element_line(color='gray95' ),
+    strip.background=element_blank(),
+    strip.text.x=element_text( face='bold' )
+    ) +
+  guides( color=guide_legend(override.aes=list(size=1)) )
+```
+```{r echo=FALSE}
+ggsave('images/03_loads_trendlines-divided.jpg', device='jpeg', width=250, height=150, units='mm', dpi=640)
+```
+
+From the first plot we can see that there is a very high variance during daytime and during weeks. This variation can make the plot a bit difficult to be read. In the second plot, where loads are grouped by the median of every day, the trendline is more clear, and we don't need to use a *Smoothed conditional means*.
+
+*Pronto Soccorso Udine* was very full on March, since it had almost the double of patients per day compared to first days of April in the same Emergency Room, but from April his trend is slowly increasing.
+*Pronto Soccorso Cattinara* and *Pronto Soccorso Monfalcone* trends are quite constant, while *Pronto Soccorso Pordenone* average load is increasing.
+
+***
+
+From the previous plot we saw that *Pronto Soccorso Udine* had the major variation during time. We could ask if this trend is related to priority color, for example. Let's visualize a plot with loads during time, grouped by priority code.
+
+```{r}
+attendances %>%
+  filter(emergency_room == 'Pronto Soccorso Udine') %>% 
+  select(date_time, emergency_room, priority, total_patients) %>%
+  ggplot(mapping=aes(x=date_time, y=total_patients, group=priority)) +
+  geom_line(aes(color=priority), size=0.5, alpha=0.25) +
+  stat_smooth(aes(color=priority), method='gam', formula=y~s(x,bs='cs'), size=1, se=FALSE) +
+  geom_vline(xintercept=COVIDLocalRiskValuation$date_time, linetype=3, size=0.25, color='black') +
+  annotate(x=COVIDLocalRiskValuation$date_time, y=+Inf, label=paste('COVID-19 local risk:\n', sprintf('\u201C'), COVIDLocalRiskValuation$risk, sprintf('\u201D'), sep=''), vjust=1.25, size=3.5, geom='label', family='CMU Sans Serif') +
+  scale_colour_manual(values=priority_colors) +
+  scale_x_datetime( limits=c(min(attendances$date_time), max(attendances$date_time)), labels = date_format("%Y-%m-%d") ) +
+  labs(
+    title='Number of patients in Pronto Soccorso Udine',
+    subtitle='The number of total patients that were in “Pronto Soccorso Udine” along time',
+    caption=paste('Data from servizionline.sanita.fvg.it/psonline\nLast update:', max(attendances$date_time, na.rm=TRUE)),
+    x='Time',
+    y='Number of patients',
+    color='Priority'
+  ) +
+  theme_classic() +
+  theme(
+    legend.position='top',
+    legend.box.margin=margin( t=6, unit='mm' ),
+    legend.title=element_text( face='bold' ),
+    legend.background=element_rect( color='gray96', fill='gray96', size=2 ),
+    text=element_text( family='CMU Sans Serif' ),
+    axis.title=element_text( face='bold' ),
+    plot.title=element_text( face='bold' ),
+    plot.caption=element_text( face='italic', color='gray60' )
+    )
+```
+```{r echo=FALSE}
+ggsave('images/04_udine-priority_trendlines.jpg', device='jpeg', width=250, height=150, units='mm', dpi=640)
+```
+
+We see that there is no correlation between the huge amount of patients in the first period of the observation, and a single priority color, because the ratio from this remains essentially the same: low number of patients with 'Bianco' and 'Rosso' priority code, and high number of patients with 'Giallo' and 'Verde' priority code.
+
+***
+
+Our third question was 'How is color priority related with waiting time?'.
+
+We could think that waiting time decrease when priority increase.
+So 'Bianco' patients will have to wait the greater amount of time, 'Verde', 'Giallo' less, and 'Red' patients with the lowest time.
+
+```{r}
+cor(
+  attendances %>%
+    filter(waiting_time<as_hms('08:00:00') ) %>%
+    select( waiting_time ) %>% 
+    mutate( waiting_time = as.numeric(waiting_time) ),
+  attendances %>%
+    filter(waiting_time<as_hms('08:00:00') ) %>% 
+    select( priority ) %>% 
+    mutate( priority = as.numeric(priority) ),
+  method='pearson'
+)
+```
+
+The correlation has minus sign, so it is true that waiting time decrease when priority increase, as we were expecting. Although, the value of the correlation between priority code and waiting time is far from 1, describing a not-so-strong connection between the two variables.
+
+With this in mind, we can visualize a scatter plot of waiting time distribution grouped by priority code:
+
+```{r}
+attendances %>%
+  filter(emergency_room == filter(median_loads, median_load>=10)$emergency_room) %>% # We remove Emergency Rooms with less than 10 patients as median, to clear the plot
+  filter(waiting_time<as_hms('08:00:00') ) %>% 
+  select(date_time, emergency_room, priority, examined_patients, waiting_patients, total_patients, waiting_time) %>%
+  ggplot(mapping=aes(x=total_patients, y=waiting_time, color=priority)) +
+  geom_point( shape=3, alpha=0.1 ) +
+  scale_colour_manual(values=priority_colors) +
+  facet_grid( cols=vars(priority) ) +
+  labs(
+    title='Number of patients in Pronto Soccorso Udine',
+    subtitle='The number of total patients that were in “Pronto Soccorso Udine” along time',
+    caption=paste('Data from servizionline.sanita.fvg.it/psonline\nLast update:', max(attendances$date_time, na.rm=TRUE)),
+    x='Number of patients',
+    y='Waiting time',
+    color='Priority'
+  ) +
+  theme_classic() +
+  theme(
+    legend.position='none',
+    legend.box.margin=margin( t=2, b=2, unit='mm' ),
+    legend.title=element_text( face='bold' ),
+    legend.background=element_rect( color='gray96', fill='gray96', size=2 ),
+    text=element_text( family='CMU Sans Serif' ),
+    axis.title=element_text( face='bold' ),
+    plot.title=element_text( face='bold' ),
+    plot.caption=element_text( face='italic', color='gray60' ),
+    panel.grid.major.y=element_line(color='gray95' ),
+    strip.background=element_blank(),
+    strip.text.x=element_text( face='bold' )
+    )
+```
+```{r echo=FALSE}
+ggsave('images/05_priority_scatterplot.jpg', device='jpeg', width=250, height=150, units='mm', dpi=640)
+```
+
+The scenario we expected is quite respected, with a substantial variation: the number of patients with 'Bianco' priority code is very low.
+On the contrary, we expected the number of patients in the Emergency Room to increase as the priority severity decreases.
+
+This phenomenon can be explained in several ways: for example, we can think that after the arrival of COVID people are more reluctant to go to Emergency Rooms where they can meet seriously ill people, except in strictly necessary situations.
+
+***
+
+Is our dataset mainly about *examined* patients or *waiting* patients? From the below plot, we can see that about 85% of patients are under examinations, and only 15% are waiting to be seen by a doctor.
+
+```{r}
+attendances %>% 
+  group_by( date_time ) %>% 
+  summarise(
+    examined_patients=sum(examined_patients, na.rm=TRUE),
+    waiting_patients=sum(waiting_patients, na.rm=TRUE),
+    .groups='drop'
+  ) %>% 
+  summarise(
+    examined_patients=mean(examined_patients, na.rm=TRUE),
+    waiting_patients=mean(waiting_patients, na.rm=TRUE)
+  ) %>%
+  gather('examined_patients', 'waiting_patients', key='patients_type', value='mean') %>% 
+  ggplot( aes(x='', y=mean, fill=patients_type)) +
+  geom_bar(stat="identity", width=1) +
+  labs(
+    title='Average number of waiting patients\nand examined patients',
+    subtitle='The number of people that are waiting\nto be examined and people that are being\nexamined in a single moment,\nin Friuli-Venezia Giulia',
+    caption=paste('Data from servizionline.sanita.fvg.it/psonline\nLast update:', max(attendances$date_time, na.rm=TRUE)),
+    fill='Type of patients'
+  ) +
+  scale_fill_manual(values=c(examined_patients='#9ED0E5', waiting_patients='#C7BBC9'), labels=c('Under-examinations patients', 'Waiting patients')) +
+  coord_polar( 'y', start=0 ) +
+  #geom_text( aes(x=1, label=paste(round(mean, digits=0), '\n', round( (mean/sum(mean)*100 ), digits=1), '%', sep='' )), size=3, show.legend=FALSE, position=position_stack(vjust=0.5) ) +
+  geom_text( aes(x=1, label=paste(round( (mean/sum(mean)*100 ), digits=1), '%', sep='' )), size=3, show.legend=FALSE, position=position_stack(vjust=0.5) ) +
+  theme_void() +
+  theme(
+    legend.position='top',
+    legend.box.margin=margin( t=6, unit='mm' ),
+    legend.direction = 'vertical',
+    legend.title=element_text( face='bold' ),
+    legend.background=element_rect( color='gray96', fill='gray96', size=2 ),
+    text=element_text( family='CMU Sans Serif' ),
+    plot.title=element_text( face='bold' ),
+    plot.caption=element_text( face='italic', color='gray60' )
+  )
+```
+```{r echo=FALSE}
+ggsave('images/07_waiting-examined_pie.jpg', device='jpeg', width=250, height=150, units='mm', dpi=640)
+```
+
+Is this trend equal for all of the Emergency Rooms? With a super cool *waffle* plot we can answer to this question.
+
+```{r}
+library(waffle)
+
+attendances %>% 
+  group_by( emergency_room, date_time ) %>% 
+  summarise(
+    examined_patients=sum(examined_patients, na.rm=TRUE),
+    waiting_patients=sum(waiting_patients, na.rm=TRUE),
+    .groups='drop'
+  ) %>% 
+  group_by( emergency_room ) %>% 
+  summarise(
+    examined_patients=mean(examined_patients, na.rm=TRUE),
+    waiting_patients=mean(waiting_patients, na.rm=TRUE)
+  ) %>%
+  filter( examined_patients+waiting_patients >= 10 ) %>% 
+  gather('examined_patients', 'waiting_patients', key='patients_type', value='mean') %>%
+  mutate(emergency_room=gsub('Pronto Soccorso |Punto di Primo Intervento ', '', emergency_room)) %>% 
+  ggplot(aes(label=patients_type, color=patients_type, values=mean )) +
+  geom_pictogram(n_rows=3, size=4, flip=TRUE ) +
+  facet_wrap(~reorder(emergency_room, -mean, FUNS=sum), nrow=1, strip.position='bottom' ) +
+  coord_equal() +
+  scale_label_pictogram( labels=c('Examined patient', 'Waiting patient'), values=c('user-check', 'user-clock') ) +
+  scale_color_discrete( labels=c('Examined patient', 'Waiting patient') ) +
+  labs(
+    title='Average number of waiting patients and examined patients',
+    subtitle='The number of people that are waiting to be examined and people that are being examined\nin a single moment, in Friuli-Venezia Giulia',
+    caption=paste('Data from servizionline.sanita.fvg.it/psonline\nLast update:', max(attendances$date_time, na.rm=TRUE)),
+    label='Type of patients',
+    color='Type of patients'
+  ) +
+  theme_void() +
+  theme(
+    legend.position='top',
+    legend.box.margin=margin( t=6, unit='mm' ),
+    legend.title=element_text( face='bold' ),
+    legend.background=element_rect( color='gray96', fill='gray96', size=2 ),
+    text=element_text( family='CMU Sans Serif' ),
+    axis.title=element_text( face='bold' ),
+    plot.title=element_text( face='bold' ),
+    plot.caption=element_text( face='italic', color='gray60' ),
+    strip.text.x=element_text( size=8 ),
+    panel.spacing.x=unit(5, 'mm')
+  )
+```
+```{r echo=FALSE}
+ggsave('images/08_waiting-examined_waffle.jpg', device='jpeg', width=250, height=150, units='mm', dpi=640)
+```
+
+Yes, it seems that the majority of patients are under examinations, regardless of the Emergency Room and its dimension.
+Now that we seen how patients are divided by *waiting* and *examined* in every Emergency Room, we could want to see the division by priority.
+
+```{r}
+attendances %>%
+  group_by( emergency_room, priority ) %>%
+  summarise( total_patients=median(total_patients, na.rm=TRUE), .groups='drop' ) %>% 
+  mutate(emergency_room=gsub('Pronto Soccorso |Punto di Primo Intervento ', '', emergency_room)) %>% 
+  filter( total_patients >= 1 ) %>% 
+  group_by( emergency_room ) %>% 
+  filter( sum(total_patients) >= 10 ) %>%
+  ggplot(aes(label=priority, color=priority, values=total_patients )) +
+  geom_pictogram(n_rows=3, size=4, flip=TRUE ) +
+  facet_wrap( ~reorder(emergency_room, -total_patients, FUNS=sum, na.rm=TRUE), nrow=1, strip.position='bottom' ) +
+  coord_equal() +
+  scale_color_manual( values=priority_colors ) +
+  scale_label_pictogram( values='briefcase-medical' ) +
+  labs(
+    title='Average number of patients per priority',
+    subtitle='The average number of patients, grouped by Emergency Room and priority, in Friuli-Venezia Giulia',
+    caption=paste('Data from servizionline.sanita.fvg.it/psonline\nLast update:', max(attendances$date_time, na.rm=TRUE)),
+    label='Priority',
+    color='Priority'
+  ) +
+  theme_void() +
+  theme(
+    legend.position='top',
+    legend.box.margin=margin( t=6, unit='mm' ),
+    legend.title=element_text( face='bold' ),
+    legend.background=element_rect( color='gray96', fill='gray96', size=2 ),
+    text=element_text( family='CMU Sans Serif' ),
+    axis.title=element_text( face='bold' ),
+    plot.title=element_text( face='bold' ),
+    plot.caption=element_text( face='italic', color='gray60' ),
+    strip.text.x=element_text( size=8 ),
+    panel.spacing.x=unit(5, 'mm'),
+  )
+```
+```{r echo=FALSE}
+ggsave('images/09_priority_waffle.jpg', device='jpeg', width=250, height=150, units='mm', dpi=640)
+```
+
+The result we get is the same we could expect, since we already seen that most of the patients in Emergency Room have 'Verde' and 'Giallo' priority, while 'Bianco' patients are a very low number, and 'Red' patients are (thankfully) very rare, since only *Udine* and *Cattinara* have at least one patient with this gravity in every moment.
+
+***
+
+Maybe we could think that Emergency Rooms are emptier in some days of week (for instance, on weekends).
+
+```{r}
+attendances %>%
+  select(date_time, emergency_room, priority, total_patients) %>% 
+  mutate( date_time=as.Date(date_time) ) %>%
+  group_by( date_time, emergency_room, priority ) %>% 
+  summarise( mean_patients=mean(total_patients, na.rm=TRUE ), .groups='drop' ) %>% 
+  mutate( date_time=weekdays(date_time) ) %>%
+  rename( week_day=date_time ) %>% 
+  group_by(week_day, priority) %>% 
+  summarise(mean_patients=mean(mean_patients, na.rm=TRUE), .groups='drop' ) %>% 
+  ggplot(aes(x=factor(week_day, weekdays_order), y=mean_patients, fill=priority, group=week_day)) + 
+  geom_bar(stat='identity') +
+  labs(
+    title='Weekly average patients per Emergency Room',
+    subtitle='The average number of total patients that were in Emergency\nRoom grouped by day of week',
+    caption=paste('Data from servizionline.sanita.fvg.it/psonline\nLast update:', max(attendances$date_time, na.rm=TRUE)),
+    x='Week day',
+    y='Number of patients on average',
+    fill='Priority'
+  ) +
+  scale_fill_manual(values=priority_colors) +
+  theme_classic() +
+  theme(
+    legend.position='top',
+    legend.box.margin=margin( t=6, unit='mm' ),
+    legend.title=element_text( face='bold' ),
+    legend.background=element_rect( color='gray96', fill='gray96', size=2 ),
+    text=element_text( family='CMU Sans Serif' ),
+    axis.title=element_text( face='bold' ),
+    plot.title=element_text( face='bold' ),
+    plot.caption=element_text( face='italic', color='gray60' )
+  )
+```
+```{r echo=FALSE}
+ggsave('images/06_week-priority_bars.jpg', device='jpeg', width=250, height=150, units='mm', dpi=640)
+```
+
+On the above plot, it seems that Monday is the busiest day, while on Sundays Emergency Rooms are on average less load. We can go to a deeper level, analyzing average load for every hour on every day of the week. In this case, we'll use an animated plot:
+
+```{r}
+animate(
+  attendances %>%
+    group_by( week_day=weekdays(date_time), hour=hour(date_time) ) %>%
+    select( -emergency_room, -examined_patients, -waiting_patients, -waiting_time ) %>%
+    group_by( date_time, week_day, priority, hour ) %>% 
+    summarise(total_patients=sum(total_patients, na.rm=TRUE), .groups='drop' ) %>%
+    group_by(week_day, priority, hour) %>% 
+    summarise(total_patients=mean(total_patients, na.rm=TRUE), .groups='drop' ) %>%
+    ggplot( aes( x=hour, y=total_patients, fill=priority, group=hour ) ) +
+    geom_bar( stat='identity' ) +
+    scale_fill_manual(values=priority_colors) +
+    scale_x_continuous( breaks=seq(0,23,by=4) ) +
+    transition_states(
+      factor(week_day, weekdays_order),
+      transition_length=2,
+      state_length=5,
+      wrap=TRUE
+    ) +
+    enter_fade() + 
+    exit_shrink() +
+    ease_aes('sine-in-out') + 
+    labs(
+      title='Average patients per hour on {closest_state}s',
+      subtitle='The average number of total patients that were in any of the Emergency\nRooms of FVG on {closest_state}s, grouped by hour of day',
+      caption=paste('Data from servizionline.sanita.fvg.it/psonline\nLast update:', max(attendances$date_time, na.rm=TRUE)),
+      x='Hour of day',
+      y='Number of patients on average',
+      fill='Priority'
+      ) +
+    theme_classic() +
+  theme(
+    legend.position='top',
+    legend.box.margin=margin( t=2, b=2, unit='mm' ),
+    legend.title=element_text( face='bold' ),
+    legend.background=element_rect( color='gray96', fill='gray96', size=2 ),
+    text=element_text( family='CMU Sans Serif' ),
+    axis.title=element_text( face='bold' ),
+    plot.title=element_text( face='bold' ),
+    plot.caption=element_text( face='italic', color='gray60' )
+    ),
+  fps=15,
+  duration=14,
+  renderer=gifski_renderer(),
+  height=150, width=250, units='mm', res=120
+  )
+```
+```{r echo=FALSE}
+anim_save('images/10_day-priority_bars.gif')
+```
+
+It's confirmed that Sunday is the least crowded day. We also note that saturation during the day corresponds to a curve with highs during midday or the early afternoon hours, and lows during the night (at about 4 a.m.), regardless of the day of the week.
+
+***
+
+## Function
+
+Given a location coordinates and a priority code, is it possible to decide which is the fastest hospital, that will examine the injured as soon as possible?
+We build a function (called *fastest_hospital*) to do that. Inputs of the function are coords of the place where the injured is located, and eventually the priority code he thinks to be.
+
+```{r}
+fastest_hospital=function(longitude_p=13.18819, latitude_p=45.90777, color='Bianco') {
+
+  result = head(
+    inner_join(
+      emergencyRooms %>%
+        mutate(distance=sqrt((latitude-latitude_p)**2 + (longitude-longitude_p)**2) ) %>%
+        select(hospital, emergency_room, address, city, distance),
+      attendances %>% 
+        filter(date_time == max(attendances$date_time, na.rm=TRUE)) %>%
+        filter(priority == color) %>% 
+        select(emergency_room, date_time, priority, waiting_time)
+      ) %>% 
+      select(-emergency_room) %>% 
+      arrange(distance),
+    1
+  )
+  
+  paste('Nearest hospital is ', result$hospital, ', and you with a priority of \'', result$priority, '\' you will wait about ', result$waiting_time, '.', sep='')
+}
+```
+
+So for example:
+
+```{r}
+# Cividale del Friuli (13.43108, 46.09312)
+fastest_hospital(13.43108, 46.09312)
+```
+
+```{r}
+# Maniago (12.70744,46.17126)
+fastest_hospital(12.70744, 46.17126, 'Verde')
+```
+
+```{r}
+# Gemona del Friuli (13.14017, 46.27692)
+fastest_hospital(13.14017, 46.27692, 'Giallo')
+```
+
+***
+
+## Conclusions
+
+In this project we analyzed average loads of Emergency Rooms in Friuli-Venezia Giulia, from 2021-03-23 to now.
+We spent a lot of time on data cleaning and data engineering.
+Then, we mostly used data visualization to answer some questions we had before starting to work on the dataset using *leaflet* maps, boxplots, barplots, *waffle* and animated plots.
+Lastly, we created a function to check the nearest hospital to a specified point, with relative waiting times.
