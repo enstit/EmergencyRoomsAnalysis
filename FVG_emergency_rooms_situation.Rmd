@@ -126,7 +126,6 @@ attendances <- attendances %>%
   group_by( date_time, emergency_room ) %>% 
   arrange( date_time, emergency_room, match(priority, c('Bianco', 'Verde', 'Giallo', 'Rosso')) )
 attendances$priority <- factor(attendances$priority, levels=c('Bianco', 'Verde', 'Giallo', 'Rosso'))
-
 ```
 
 ***
