@@ -460,13 +460,15 @@ So 'Bianco' patients will have to wait the greater amount of time, 'Verde', 'Gia
 cor(
   attendances %>%
     filter(waiting_time<as_hms('08:00:00') ) %>%
+    filter(total_patients>0) %>% 
     select( waiting_time ) %>% 
     mutate( waiting_time = as.numeric(waiting_time) ),
   attendances %>%
-    filter(waiting_time<as_hms('08:00:00') ) %>% 
+    filter(waiting_time<as_hms('08:00:00') ) %>%
+    filter(total_patients>0) %>% 
     select( priority ) %>% 
     mutate( priority = as.numeric(priority) ),
-  method='pearson'
+  method='spearman'
 )
 ```
 

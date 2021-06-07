@@ -135,6 +135,9 @@ The full dataset has three tables, but we only used two of them:
 		\item \textbf{attendances}, che è la tabella più corposa del dataset, e viene aggiornata ogni 10 minuti con il numero di pazienti sotto esame, in attesa e relativi tempi di attesa per ogni codice di priorità in ogni Pronto Soccorso della Regione. Allo stato attuale, questa tabella pesa oltre \SI{45}{\mega\byte};
 		\item \textbf{COVIDLocalRiskValuation}, che contiene l'elenco delle istituzioni delle varie aree di rischio nella Regione (zona rossa, zona arancione, zona gialla, zona bianca). È una tabella che ho aggiunto in un secondo momento, e che può essere utilizzata in maniera facoltativa per studiare se il COVID ha avuto un impatto significativo sul Sistema Sanitario regionale.
 	\end{enumerate}
+
+In questo studio i Pronto Soccorso pediatrici sono stati accorpati al Pronto Soccorso generale dello stesso ospedale, se esiste.
+
 }
 
 \end{frame}
@@ -165,8 +168,9 @@ Some questions we could ask about our scenario are, for instance:
 In this map, every circle correspond to an Emergency Room. The color matches the Healthcare company which the Hospital belongs, and the size of the circle is proportional to the median of patients in the Emergency Room. Circles of Emergency Rooms with \texttt{NA} values for median load are semi-transparent filled.
 \begin{figure}
   \centering
-  \href{http://uniud.enricostefanel.it/datascience/project/images/map.html}{\includegraphics[width=0.6\textwidth]{../images/map.pdf}}
+  \href{http://uniud.enricostefanel.it/datascience/project/images/map.html}{\includegraphics[width=0.75\textwidth]{../images/map.pdf}}
 \end{figure}
+\scriptsize \href{http://uniud.enricostefanel.it/datascience/project/images/map.html}{\color{gray}{Click}} on the map to open the interactive one.
 
 \note{
 \scriptsize Facendo \href{http://uniud.enricostefanel.it/datascience/project/images/map.html}{\color{gray}{click}} sull'immagine si apre la mappa interativa. \normalsize
@@ -218,11 +222,11 @@ Now, we know the context. In the previous map, we could identify which are the E
 
 \begin{frame}
 Our third question was ``How is color priority related with waiting time?''.
-We could calculate \textit{Pearson} coefficient between the two variables, thinking priority as a discrete variable (from $1$ of 'Bianco' to $4$ of 'Rosso'):
+We could calculate \textit{Spearman} coefficient between the two variables, thinking priority as a discrete variable (from $1$ of 'Bianco' to $4$ of 'Rosso'):
 \begin{center}\small
 	\begin{tabular}{ c c }
 		& \textbf{priority} \\
-		\textbf{waiting\_time} & $-0.4024222$ \\
+		\textbf{waiting\_time} & $-0.4917741$ \\
 	\end{tabular}
 \end{center}
 The correlation has minus sign, so it is true that waiting time decrease when priority increase, as we were expecting. Although, the value of the correlation between priority code and waiting time is far from 1, describing a not-so-strong connection between the two variables.
@@ -234,7 +238,9 @@ The correlation has minus sign, so it is true that waiting time decrease when pr
 Relativamente ai codici di priorità, potremmo ipotizzare che il tempo di attesa diminuisce quando aumenta la priorità, e il numero di pazienti diminuisce.
 In questa maniera i pazienti 'Bianco' dovranno aspettare la maggior quantità di tempo, 'Verde', 'Giallo' meno, e i pazienti 'Rosso' con il tempo più basso.
 
-Calcolando il coefficiente di Pearson tra la variabile \textit{waiting\_time} e \textit{priority} (trattata come discreta), otteniamo un valore di $-0.40$. Il segno meno del coefficiente ci indica che effettivamente il tempo di attesa diminuisce con l'aumentare della priorità. Il valore asdsoluto, però, è molto distante da $1$, e questo ci indica uno scarso legame in media tra le due variabili.
+Calcolando il coefficiente di Spearman tra la variabile \textit{waiting\_time} e \textit{priority} (trattata come discreta), otteniamo un valore di circa $-0.50$. Il segno meno del coefficiente ci indica che effettivamente il tempo di attesa diminuisce con l'aumentare della priorità. Il valore assoluto, però, è molto distante da $1$, e questo ci indica uno scarso legame in media tra le due variabili.
+
+Utilizziamo la funzione di Spearman invece di quella di Pearson perché non ci aspettiamo una relazione strettamente lineare tra le variabili, ma ci chiediamo semplicemente se la funzione è monotona.
 
 Lo scenario che ci aspettavamo è abbastanza rispettato, con una variazione sostanziale: il numero di pazienti con codice di priorità 'Bianco' è molto basso.
 Al contrario, ci aspettavamo che il numero di pazienti in Pronto Soccorso aumentasse al diminuire della gravità della priorità.
@@ -247,7 +253,7 @@ Questo fenomeno può essere spiegato in diversi modi: per esempio, possiamo pens
   \centering
   \includegraphics[width=0.75\textwidth]{../images/08_waiting-examined_waffle.jpg}
 \end{figure}
-\note{Say ``hello'' for the last time}
+\note{\dots}
 \end{frame}
 
 \begin{frame}
@@ -255,7 +261,7 @@ Questo fenomeno può essere spiegato in diversi modi: per esempio, possiamo pens
   \centering
   \includegraphics[width=0.75\textwidth]{../images/09_priority_waffle.jpg}
 \end{figure}
-\note{Say ``hello'' for the last time}
+\note{\dots}
 \end{frame}
 
 \begin{frame}
@@ -264,6 +270,7 @@ Questo fenomeno può essere spiegato in diversi modi: per esempio, possiamo pens
   \centering
   \href{http://uniud.enricostefanel.it/datascience/project/images/10_day-priority_bars.gif}{\includegraphics[width=0.75\textwidth]{../images/10_day-priority_bars.jpg}}
 \end{figure}
+\scriptsize \href{http://uniud.enricostefanel.it/datascience/project/images/10_day-priority_bars.gif}{\color{gray}{Click}} on the image to open the animated plot.
 
 \note{\scriptsize Facendo \href{http://uniud.enricostefanel.it/datascience/project/images/10_day-priority_bars.gif}{\color{gray}{click}} sull'immagine si apre il grafico animato. \normalsize
 
