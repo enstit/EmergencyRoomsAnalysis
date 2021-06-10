@@ -132,7 +132,7 @@ The full dataset has three tables, but we only used two of them:
 \note{Il dataset utilizzato era formato da tre tabelle:
 	\begin{enumerate}
 		\item \textbf{emergencyRooms}, che contiene l'elenco di tutti i Pronto Soccorso della Regione, con relative Aziende Sanitarie di appartenenza, indirizzo, eventuali note, \dots
-		\item \textbf{attendances}, che è la tabella più corposa del dataset, e viene aggiornata ogni 10 minuti con il numero di pazienti sotto esame, in attesa e relativi tempi di attesa per ogni codice di priorità in ogni Pronto Soccorso della Regione. Allo stato attuale, questa tabella pesa oltre \SI{45}{\mega\byte};
+		\item \textbf{attendances}, che è la tabella più corposa del dataset, e viene aggiornata ogni 10 minuti con il numero di pazienti sotto esame, in attesa e relativi tempi di attesa per ogni codice di priorità in ogni Pronto Soccorso della Regione. Allo stato attuale, questa tabella pesa circa \SI{50}{\mega\byte};
 		\item \textbf{COVIDLocalRiskValuation}, che contiene l'elenco delle istituzioni delle varie aree di rischio nella Regione (zona rossa, zona arancione, zona gialla, zona bianca). È una tabella che ho aggiunto in un secondo momento, e che può essere utilizzata in maniera facoltativa per studiare se il COVID ha avuto un impatto significativo sul Sistema Sanitario regionale.
 	\end{enumerate}
 
@@ -217,7 +217,9 @@ Now, we know the context. In the previous map, we could identify which are the E
 \end{figure}
 \textit{Pronto Soccorso Udine} was very full on March, since it had almost the double of patients per day compared to first days of April in the same Emergency Room, but from April his trend is slowly increasing. \textit{Pronto Soccorso Cattinara} and \textit{Pronto Soccorso Monfalcone} trends are quite constant, while \textit{Pronto Soccorso Pordenone} average load is increasing.
 
-\note{Questo grafico invece ci indica come sono variate le presenze nell'arco temporale dal 23 marzo 2021 ad oggi, relativo ai Pronto Soccorso con almeno 15 pazienti come mediana, ovvero quelli di Udine, Cattinara a Trieste, Pordenone e Monfalcone.}
+\note{Questo grafico invece ci indica come sono variate le presenze nell'arco temporale dal 23 marzo 2021 ad oggi, relativo ai Pronto Soccorso con almeno 15 pazienti come mediana, ovvero quelli di Udine, Cattinara a Trieste, Pordenone e Monfalcone.
+Il colore della linea indica l'Azienda Sanitaria di appartenenza.
+}
 \end{frame}
 
 \begin{frame}
@@ -253,7 +255,9 @@ Questo fenomeno può essere spiegato in diversi modi: per esempio, possiamo pens
   \centering
   \includegraphics[width=0.75\textwidth]{../images/08_waiting-examined_waffle.jpg}
 \end{figure}
-\note{\dots}
+\note{Da questo grafico vediamo, per i principali Pronto Soccorso della Regione (ovvero quelli con una presenza mediana di almeno 10 pazienti) qual è il rapporto tra pazienti in attesa e pazienti in esame.
+
+}
 \end{frame}
 
 \begin{frame}
@@ -261,18 +265,26 @@ Questo fenomeno può essere spiegato in diversi modi: per esempio, possiamo pens
   \centering
   \includegraphics[width=0.75\textwidth]{../images/09_priority_waffle.jpg}
 \end{figure}
-\note{\dots}
+\note{Il grafico in questa slide è lo stesso della slide precedente, ma stavolta i pazienti invece di essere divisi tra pazienti in attesa e pazienti in esame, sono divisi per codice di priorità.
+
+Le osservazioni che possiamo fare sono le stesse di quelle viste in precedenza:
+\begin{itemize}
+	\item la maggior parte dei pazienti ha il codice verde o il codice giallo;
+	\item solo i Pronto Soccorso di Udine e Cattinara hanno almeno un paziente in codice rosso in ogni istante;
+\end{itemize}
+
+}
 \end{frame}
 
 \begin{frame}
 
 \begin{figure}
   \centering
-  \href{http://uniud.enricostefanel.it/datascience/project/images/10_day-priority_bars.gif}{\includegraphics[width=0.75\textwidth]{../images/10_day-priority_bars.jpg}}
+  \href{http://uniud.enricostefanel.it/datascience/project/images/11_day-priority_bars.gif}{\includegraphics[width=0.75\textwidth]{../images/11_day-priority_bars.jpg}}
 \end{figure}
-\scriptsize \href{http://uniud.enricostefanel.it/datascience/project/images/10_day-priority_bars.gif}{\color{gray}{Click}} on the image to open the animated plot.
+\scriptsize \href{http://uniud.enricostefanel.it/datascience/project/images/11_day-priority_bars.gif}{\color{gray}{Click}} on the image to open the animated plot.
 
-\note{\scriptsize Facendo \href{http://uniud.enricostefanel.it/datascience/project/images/10_day-priority_bars.gif}{\color{gray}{click}} sull'immagine si apre il grafico animato. \normalsize
+\note{\scriptsize Facendo \href{http://uniud.enricostefanel.it/datascience/project/images/11_day-priority_bars.gif}{\color{gray}{click}} sull'immagine si apre il grafico animato. \normalsize
 
 Analizzando le presenze medie divise per giorno della settimana e per ora del giorno notiamo che indipendentemente dal giorno, la distribuzione di presenze nell'arco della giornata segue un andamento a curva, con massime verso mezzogiorno e prime ore del pomeriggio, e minime nella notte. Globalmente, nei weekend i Pronto Soccorso sono meno pieni, mentre il lunedì è la giornata con il carico maggiore.
 }
@@ -291,9 +303,14 @@ So, for instance,
 
 
 \begin{frame}{Conclusions}
-We used \textit{data analysis} and \textit{data visualization}
+We used \textit{data analysis} and \textit{data visualization} to analyze attendance trends in emergency rooms in Friuli-Venezia~Giulia during this Spring.
 
-\note{In conclusione, in questo progetto si sono analizzate \dots}
+In conclusion, it can be affirmed that the analysis carried out has not shown obvious criticalities, but on the contrary an excellent organization of the emergency system in the territory.
+
+\note{
+Abbiamo usato l'analisi dei dati e la visualizzazione dei dati per analizzare l'andamento delle presenze nei pronto soccorso del Friuli-Venezia~Giulia durante questa primavera.
+
+In conclusione, si può affermare che l'analisi fatta non ha evidenziato evidenti criticità, ma al contrario un'ottima organizzazione del sistema di emergenza nel territorio.}
 
 \end{frame}
 

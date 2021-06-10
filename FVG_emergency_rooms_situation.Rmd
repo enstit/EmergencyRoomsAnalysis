@@ -478,16 +478,16 @@ With this in mind, we can visualize a scatter plot of waiting time distribution 
 
 ```{r}
 attendances %>%
-  filter(emergency_room == filter(median_loads, median_load>=10)$emergency_room) %>% # We remove Emergency Rooms with less than 10 patients as median, to clear the plot
+    filter(emergency_room %in% filter(inner_join(emergencyRooms, median_loads), median_load>=15)$emergency_room ) %>% # We remove Emergency Rooms with less than 15 patients as median, to clear the plot
   filter(waiting_time<as_hms('08:00:00') ) %>% 
   select(date_time, emergency_room, priority, examined_patients, waiting_patients, total_patients, waiting_time) %>%
   ggplot(mapping=aes(x=total_patients, y=waiting_time, color=priority)) +
-  geom_point( shape=3, alpha=0.1 ) +
+  geom_point( shape=3, alpha=0.05 ) +
   scale_colour_manual(values=priority_colors) +
   facet_grid( cols=vars(priority) ) +
   labs(
-    title='Number of patients in Pronto Soccorso Udine',
-    subtitle='The number of total patients that were in “Pronto Soccorso Udine” along time',
+    title='Distribution of waiting patients',
+    subtitle='The distribution of waiting patients over waiting time',
     caption=paste('Data from servizionline.sanita.fvg.it/psonline\nLast update:', max(attendances$date_time, na.rm=TRUE)),
     x='Number of patients',
     y='Waiting time',
@@ -516,6 +516,57 @@ The scenario we expected is quite respected, with a substantial variation: the n
 On the contrary, we expected the number of patients in the Emergency Room to increase as the priority severity decreases.
 
 This phenomenon can be explained in several ways: for example, we can think that after the arrival of COVID people are more reluctant to go to Emergency Rooms where they can meet seriously ill people, except in strictly necessary situations.
+
+```{r}
+animate(
+  attendances %>%
+    filter(waiting_time<as_hms('08:00:00') ) %>% 
+    select(date_time, emergency_room, priority, examined_patients, waiting_patients, total_patients, waiting_time) %>%
+    filter(emergency_room %in% filter(inner_join(emergencyRooms, median_loads), median_load>=15)$emergency_room ) %>% # We remove Emergency Rooms with less than 15 patients as median, to clear the plot
+    ggplot(mapping=aes(x=total_patients, y=waiting_time, color=priority)) +
+    geom_point( shape=3, alpha=0.1 ) +
+    scale_colour_manual(values=priority_colors) +
+    facet_wrap( ~reorder(emergency_room, -total_patients, FUNS=median), ncol = 3 ) +
+    transition_states(
+      priority,
+      transition_length=1,
+      state_length=2,
+      wrap=TRUE
+    ) +
+    enter_fade() + 
+    exit_shrink() +
+    ease_aes('sine-in-out') +
+    labs(
+      title='Distribution of waiting patients with \'{closest_state}\' priority',
+      subtitle='The distribution of waiting patients over waiting time',
+      caption=paste('Data from servizionline.sanita.fvg.it/psonline\nLast update:', max(attendances$date_time, na.rm=TRUE)),
+      x='Number of patients',
+      y='Waiting time',
+      color='Priority'
+    ) +
+    theme_classic() +
+    theme(
+      legend.position='none',
+      legend.box.margin=margin( t=2, b=2, unit='mm' ),
+      legend.title=element_text( face='bold' ),
+      legend.background=element_rect( color='gray96', fill='gray96', size=2 ),
+      text=element_text( family='CMU Sans Serif' ),
+      axis.title=element_text( face='bold' ),
+      plot.title=element_text( face='bold' ),
+      plot.caption=element_text( face='italic', color='gray60' ),
+      panel.grid.major.y=element_line(color='gray95' ),
+      strip.background=element_blank(),
+      strip.text.x=element_text( face='bold' )
+      ),
+  fps=15,
+  duration=12,
+  renderer=gifski_renderer(),
+  height=150, width=250, units='mm', res=120
+)
+```
+```{r echo=FALSE}
+anim_save('images/06_priority_scatterplot-animated.gif')
+```
 
 ***
 
@@ -695,7 +746,7 @@ attendances %>%
   )
 ```
 ```{r echo=FALSE}
-ggsave('images/06_week-priority_bars.jpg', device='jpeg', width=250, height=150, units='mm', dpi=640)
+ggsave('images/10_week-priority_bars.jpg', device='jpeg', width=250, height=150, units='mm', dpi=640)
 ```
 
 On the above plot, it seems that Monday is the busiest day, while on Sundays Emergency Rooms are on average less load. We can go to a deeper level, analyzing average load for every hour on every day of the week. In this case, we'll use an animated plot:
@@ -748,7 +799,7 @@ animate(
   )
 ```
 ```{r echo=FALSE}
-anim_save('images/10_day-priority_bars.gif')
+anim_save('images/11_day-priority_bars.gif')
 ```
 
 It's confirmed that Sunday is the least crowded day. We also note that saturation during the day corresponds to a curve with highs during midday or the early afternoon hours, and lows during the night (at about 4 a.m.), regardless of the day of the week.
