@@ -67,6 +67,7 @@ library(hms)      # Allows reading single components from hms data
 library(leaflet)  # Allows creating maps
 library(gifski)   # Allows rendering animations
 library(scales)
+library(waffle)
 
 library(extrafont)# Allows changing plots font
 #font_import()    # Import computer fonts in RStudio (Just the first time)
@@ -132,7 +133,7 @@ attendances$priority <- factor(attendances$priority, levels=c('Bianco', 'Verde',
 
 Taking a look at the *EmergencyRooms* dataset, we read that some Emergency Room are closed during night hours or period of the year:
 
-- 'Punto di Primo Intervento Lignano' is only open between May to September;
+- 'Punto di Primo Intervento Lignano' is only open between 12th of June to September (according to an [article](https://messaggeroveneto.gelocal.it/udine/cronaca/2021/06/12/news/aperto-il-pronto-soccorso-a-lignano-l-annuncio-della-regione-vaccinazioni-di-massa-nei-luoghi-di-vacanza-1.40381910) of a local newspaper);
 - 'Punto di Primo Intervento Sacile' is open everyday from 08:00 to 20:00;
 - 'Pronto Soccorso Maggiore' is open everyday from 08:00 to 19:30.
 
@@ -143,9 +144,9 @@ This could lead to misunderstandings: it's better to transform this observations
 # Set all observation to NA when an Emergency Room is in close days or hours
 attendances <- attendances %>%
   mutate(
-    examined_patients=ifelse(emergency_room == 'Punto di Primo Intervento Lignano' & ( month(date_time)<5 | month(date_time)>9 ), NA, examined_patients),
-    waiting_patients=ifelse(emergency_room == 'Punto di Primo Intervento Lignano' & ( month(date_time)<5 | month(date_time)>9 ), NA, waiting_patients),
-    waiting_time=ifelse(emergency_room == 'Punto di Primo Intervento Lignano' & ( month(date_time)<5 | month(date_time)>9 ), NA, waiting_time),
+    examined_patients=ifelse(emergency_room == 'Punto di Primo Intervento Lignano' & !between(date(date_time), ymd('2021-06-12'), ymd('2021-09-30')), NA, examined_patients),
+    waiting_patients=ifelse(emergency_room == 'Punto di Primo Intervento Lignano' & !between(date(date_time), ymd('2021-06-12'), ymd('2021-09-30')), NA, waiting_patients),
+    waiting_time=ifelse(emergency_room == 'Punto di Primo Intervento Lignano' & !between(date(date_time), ymd('2021-06-12'), ymd('2021-09-30')), NA, waiting_time),
   ) %>%
   mutate(
     examined_patients=ifelse(emergency_room == 'Punto di Primo Intervento Sacile' & (hour(date_time)<8 | hour(date_time)>20), NA, examined_patients),
@@ -526,7 +527,7 @@ animate(
     ggplot(mapping=aes(x=total_patients, y=waiting_time, color=priority)) +
     geom_point( shape=3, alpha=0.1 ) +
     scale_colour_manual(values=priority_colors) +
-    facet_wrap( ~reorder(emergency_room, -total_patients, FUNS=median), ncol = 3 ) +
+    facet_wrap( ~reorder(emergency_room, -total_patients, FUNS=median), ncol = 2 ) +
     transition_states(
       priority,
       transition_length=1,
@@ -570,7 +571,7 @@ anim_save('images/06_priority_scatterplot-animated.gif')
 
 ***
 
-Is our dataset mainly about *examined* patients or *waiting* patients? From the below plot, we can see that about 85% of patients are under examinations, and only 15% are waiting to be seen by a doctor.
+Is our dataset mainly about *examined* patients or *waiting* patients? From the below plot, we can see that about 84% of patients are under examinations, and only 16% are waiting to be seen by a doctor.
 
 ```{r}
 attendances %>% 
@@ -616,8 +617,6 @@ ggsave('images/07_waiting-examined_pie.jpg', device='jpeg', width=250, height=15
 Is this trend equal for all of the Emergency Rooms? With a super cool *waffle* plot we can answer to this question.
 
 ```{r}
-library(waffle)
-
 attendances %>% 
   group_by( emergency_room, date_time ) %>% 
   summarise(

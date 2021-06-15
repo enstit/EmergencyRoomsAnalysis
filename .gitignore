@@ -4,3 +4,9 @@ tmp/
 .afpDeleted*
 .DS_Store
 .Rhistory
+.DS_Store
+.RData
+.Rhistory
+.DS_Store
+.RData
+.Rhistory
