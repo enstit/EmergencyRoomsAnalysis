@@ -805,55 +805,8 @@ It's confirmed that Sunday is the least crowded day. We also note that saturatio
 
 ***
 
-## Function
-
-Given a location coordinates and a priority code, is it possible to decide which is the fastest hospital, that will examine the injured as soon as possible?
-We build a function (called *fastest_hospital*) to do that. Inputs of the function are coords of the place where the injured is located, and eventually the priority code he thinks to be.
-
-```{r}
-fastest_hospital=function(longitude_p=13.18819, latitude_p=45.90777, color='Bianco') {
-
-  result = head(
-    inner_join(
-      emergencyRooms %>%
-        mutate(distance=sqrt((latitude-latitude_p)**2 + (longitude-longitude_p)**2) ) %>%
-        select(hospital, emergency_room, address, city, distance),
-      attendances %>% 
-        filter(date_time == max(attendances$date_time, na.rm=TRUE)) %>%
-        filter(priority == color) %>% 
-        select(emergency_room, date_time, priority, waiting_time)
-      ) %>% 
-      select(-emergency_room) %>% 
-      arrange(distance),
-    1
-  )
-  
-  paste('Nearest hospital is ', result$hospital, ', and you with a priority of \'', result$priority, '\' you will wait about ', result$waiting_time, '.', sep='')
-}
-```
-
-So for example:
-
-```{r}
-# Cividale del Friuli (13.43108, 46.09312)
-fastest_hospital(13.43108, 46.09312)
-```
-
-```{r}
-# Maniago (12.70744,46.17126)
-fastest_hospital(12.70744, 46.17126, 'Verde')
-```
-
-```{r}
-# Gemona del Friuli (13.14017, 46.27692)
-fastest_hospital(13.14017, 46.27692, 'Giallo')
-```
-
-***
-
 ## Conclusions
 
 In this project we analyzed average loads of Emergency Rooms in Friuli-Venezia Giulia, from 2021-03-23 to now.
 We spent a lot of time on data cleaning and data engineering.
 Then, we mostly used data visualization to answer some questions we had before starting to work on the dataset using *leaflet* maps, boxplots, barplots, *waffle* and animated plots.
-Lastly, we created a function to check the nearest hospital to a specified point, with relative waiting times.

@@ -7,6 +7,9 @@
   \setbeamertemplate{navigation symbols}{}
   \setbeamertemplate{caption}[numbered]
 }
+
+\setbeamertemplate{footline}[frame number]
+
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[binary-units=true]{siunitx}
@@ -32,19 +35,25 @@ line/.style={->,>=latex'}
 }
 
 
-\title[FVG Emergency Rooms situation]{FVG Emergency Rooms situation\\during Spring 2021\\\smallskip \small Data science project}
+\title[FVG Emergency Rooms situation]{FVG Emergency Rooms situation during Spring 2021\\\smallskip \small Data science project}
 \author[\href{mailto:stefanel.enrico@spes.uniud.it}{Enrico Stefanel}]{Enrico Stefanel\\137411\\\href{mailto:stefanel.enrico@spes.uniud.it}{\texttt{stefanel.enrico@spes.uniud.it}}}
 \date{\today}
 
 \begin{document}
 
 
-\begin{frame}
+\begin{frame}[plain]
+\begin{center}
+    \vbox to0pt{%
+    \vbox to\textheight{
+    \includegraphics[height=0.5\textwidth]{polloPallido.pdf}%
+    }\vss}
+  \end{center}
   \titlepage
 \end{frame}
 
 \begin{frame}{Data collection}
-Friuli-Venezia Giulia region offers to the citizens the possibility to check live loads and average timings for every Emergency Room in the territory, thru the ``\href{https://servizionline.sanita.fvg.it/psonline}{Situazione nei Pronto Soccorso}'' web service, powered by \href{https://www.insiel.it/}{Insiel S.p.A.}.
+Friuli-Venezia Giulia region offers to citizens the possibility to check live loads and average timings for every Emergency Room in the territory, through the ``\href{https://servizionline.sanita.fvg.it/psonline}{Situazione nei Pronto Soccorso}'' web service, powered by \href{https://www.insiel.it/}{Insiel S.p.A.}.
 
 Every 10 minutes since 2021-03-23, I run a Python script on my Raspberry Pi to collect this data and save it into a CSV file.
 
