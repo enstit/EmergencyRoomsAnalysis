@@ -79,9 +79,9 @@ We also set the desired order for week days (in this case, starting on Mondays, 
 
 ```{r import}
 # Import dataset
-emergencyRooms <- read_csv('https://www.enricostefanel.it/files/FVG_healthcare/emergencyRooms.csv', na='')
-attendances <- read_csv('https://www.enricostefanel.it/files/FVG_healthcare/attendances.csv', na='')
-COVIDLocalRiskValuation <- read_csv('https://www.enricostefanel.it/files/FVG_healthcare/COVIDLocalRiskValuation.csv', na='')
+emergencyRooms <- read_csv('.data/emergencyRooms.csv', na='')
+attendances <- read_csv('.data/attendances.csv', na='')
+COVIDLocalRiskValuation <- read_csv('.data/COVIDLocalRiskValuation.csv', na='')
 
 # Set weekdays order in European format, and set data colors for graphs
 weekdays_order <- c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
