@@ -9,4 +9,11 @@ This repository contains an exploratory analysis of the attendances in the Friul
 
 ## Usage
 
-The final report can be accessed [at this link](https://www.enricostefanel.it/uniud/fvg_emergencyrooms/), or you can run the [`.Rmd` file](.FVG_emergency_rooms_situation.Rmd) in the project root using RStudio.
+The final report can be accessed [at this link](https://www.enricostefanel.it/uniud/fvg_emergencyrooms/), or you can run the [`.Rmd` file](FVG_emergency_rooms_situation.Rmd) in the project root using RStudio.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+
+[^1]: [https://servizionline.sanita.fvg.it/psonline/](https://servizionline.sanita.fvg.it/psonline/)
